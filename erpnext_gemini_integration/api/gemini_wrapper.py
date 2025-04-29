@@ -4,13 +4,13 @@
 
 from __future__ import unicode_literals
 import frappe
-import os
+# import os # Unused
 import json
 import time
-import requests
+# import requests # Unused
 import random # Added for jitter in retry logic
 from frappe import _
-from frappe.utils import cint, get_site_config, get_files_path
+from frappe.utils import cint, get_site_config # Removed get_files_path (Unused)
 from frappe.utils.file_manager import get_file_path
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -526,7 +526,7 @@ class GeminiWrapper:
                 func_to_call = ERPNext_FUNCTIONS[function_name]
                 result = func_to_call(**function_args) # Pass args as keyword arguments
             elif function_doc.implementation: # Fallback to executing code from doctype
-                _logger.warning(f"Executing function {function_name} from DocType implementation field. Consider moving to erpnext_functions.py module.")
+                _logger.warning(f"Executing function {function_name} from DocType implementation field. This approach is deprecated - consider moving implementation to erpnext_functions.py module for better maintainability and security.")
                 result = self._execute_function_code(function_doc.implementation, function_args, context)
             else:
                  return {
@@ -586,178 +586,7 @@ class GeminiWrapper:
             return result
         except Exception as e:
             frappe.log_error(f"Error executing function code: {str(e)}")
-            raise
-    
-    def process_document(self, file_path, prompt, context=None):
-        """
-        Process a document using Gemini API
-        
-        Args:
-            file_path (str): Path to the document
-            prompt (str): Prompt for document processing
-            context (dict, optional): Context information
-            
-        Returns:
-            dict: Response from Gemini API
-        """
-        try:
-            # Check if file exists
-            if not os.path.exists(file_path):
-                return {
-                    "error": True,
-                    "message": f"File not found: {file_path}"
-                }
-            
-            # Process document based on file type
-            mime_type = self._get_mime_type(file_path)
-            
-            if mime_type == "application/pdf":
-                return self._process_pdf(file_path, prompt, context)
-            elif mime_type == "application/csv" or mime_type == "text/csv":
-                return self._process_csv(file_path, prompt, context)
-            elif "image" in mime_type:
-                return self._process_image(file_path, prompt, context)
-            elif "text" in mime_type:
-                return self._process_text(file_path, prompt, context)
-            else:
-                return {
-                    "error": True,
-                    "message": f"Unsupported file type: {mime_type}"
-                }
-                
-        except Exception as e:
-            frappe.log_error(f"Error processing document: {str(e)}")
-            return {
-                "error": True,
-                "message": f"Error processing document: {str(e)}"
-            }
-    
-    def _process_pdf(self, file_path, prompt, context=None):
-        """
-        Process a PDF document
-        
-        Args:
-            file_path (str): Path to the PDF document
-            prompt (str): Prompt for document processing
-            context (dict, optional): Context information
-            
-        Returns:
-            dict: Response from Gemini API
-        """
-        try:
-            # Extract text from PDF
-            from erpnext_gemini_integration.utils.file_processor import extract_text_from_pdf
-            pdf_text = extract_text_from_pdf(file_path)
-            
-            # Create a prompt with the PDF text
-            full_prompt = f"{prompt}\n\nDocument content:\n{pdf_text}"
-            
-            # Generate content
-            return self.generate_content(full_prompt, context)
-            
-        except Exception as e:
-            frappe.log_error(f"Error processing PDF: {str(e)}")
-            return {
-                "error": True,
-                "message": f"Error processing PDF: {str(e)}"
-            }
-    
-    def _process_csv(self, file_path, prompt, context=None):
-        """
-        Process a CSV document
-        
-        Args:
-            file_path (str): Path to the CSV document
-            prompt (str): Prompt for document processing
-            context (dict, optional): Context information
-            
-        Returns:
-            dict: Response from Gemini API
-        """
-        try:
-            # Read CSV file
-            import csv
-            
-            with open(file_path, 'r') as f:
-                reader = csv.reader(f)
-                rows = list(reader)
-            
-            # Convert to string representation
-            header = rows[0]
-            data = rows[1:20]  # Limit to first 20 rows to avoid token limits
-            
-            csv_text = "Header: " + ", ".join(header) + "\n\n"
-            csv_text += "Data (first 20 rows):\n"
-            
-            for row in data:
-                csv_text += ", ".join(row) + "\n"
-            
-            # Create a prompt with the CSV text
-            full_prompt = f"{prompt}\n\nCSV content:\n{csv_text}"
-            
-            # Generate content
-            return self.generate_content(full_prompt, context)
-            
-        except Exception as e:
-            frappe.log_error(f"Error processing CSV: {str(e)}")
-            return {
-                "error": True,
-                "message": f"Error processing CSV: {str(e)}"
-            }
-    
-    def _process_image(self, file_path, prompt, context=None):
-        """
-        Process an image
-        
-        Args:
-            file_path (str): Path to the image
-            prompt (str): Prompt for image processing
-            context (dict, optional): Context information
-            
-        Returns:
-            dict: Response from Gemini API
-        """
-        try:
-            # Generate content with image
-            return self.generate_content(prompt, context, files=[file_path])
-            
-        except Exception as e:
-            frappe.log_error(f"Error processing image: {str(e)}")
-            return {
-                "error": True,
-                "message": f"Error processing image: {str(e)}"
-            }
-    
-    def _process_text(self, file_path, prompt, context=None):
-        """
-        Process a text document
-        
-        Args:
-            file_path (str): Path to the text document
-            prompt (str): Prompt for document processing
-            context (dict, optional): Context information
-            
-        Returns:
-            dict: Response from Gemini API
-        """
-        try:
-            # Read text file
-            with open(file_path, 'r') as f:
-                text = f.read()
-            
-            # Create a prompt with the text
-            full_prompt = f"{prompt}\n\nDocument content:\n{text}"
-            
-            # Generate content
-            return self.generate_content(full_prompt, context)
-            
-        except Exception as e:
-            frappe.log_error(f"Error processing text document: {str(e)}")
-            return {
-                "error": True,
-                "message": f"Error processing text document: {str(e)}"
-            }
-    
+            raise    
     def create_conversation(self, title=None, context=None):
         """
         Create a new conversation
