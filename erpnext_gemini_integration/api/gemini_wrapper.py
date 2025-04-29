@@ -500,8 +500,19 @@ class GeminiWrapper:
                 }
             
             # Execute function
-            result = self._execute_function_code(function_doc.implementation, function_args, context)
-            
+            # Check if it's a pre-packaged ERPNext function first
+            from erpnext_gemini_integration.modules.erpnext_functions import ERPNext_FUNCTIONS
+            if function_name in ERPNext_FUNCTIONS:
+                func_to_call = ERPNext_FUNCTIONS[function_name]
+                result = func_to_call(**function_args) # Pass args as keyword arguments
+            elif function_doc.implementation: # Fallback to executing code from doctype
+                _logger.warning(f"Executing function {function_name} from DocType implementation field. Consider moving to erpnext_functions.py module.")
+                result = self._execute_function_code(function_doc.implementation, function_args, context)
+            else:
+                 return {
+                    "error": True,
+                    "message": _("Function ") + f"\"{function_name}\"" + _(" has no implementation defined.")
+                }
             # Log function execution
             from erpnext_gemini_integration.modules.audit import GeminiAuditLog
             audit = GeminiAuditLog(user=self.user)

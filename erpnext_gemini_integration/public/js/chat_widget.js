@@ -16,7 +16,7 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
         this.isLoading = false;
         this.conversationId = null;
         this.messageHistory = [];
-        this.contextInfo = {};
+        this.contextInfo = {}; // Added to store current ERPNext context
         this.fileAttachments = [];
         
         // Initialize the widget
@@ -116,6 +116,12 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
         
         this.inputArea.appendChild(this.inputContainer);
         this.inputArea.appendChild(this.attachmentsContainer);
+
+        // Add Function Menu Button
+        this.functionMenuButton = document.createElement("div");
+        this.functionMenuButton.className = "gemini-functions-menu";
+        this.functionMenuButton.innerHTML = `<button class="gemini-functions-button" title="Show ERP Actions"><i class="fa fa-bolt"></i> ERP Actions</button>`;
+        this.inputArea.appendChild(this.functionMenuButton);
         
         this.chatBody.appendChild(this.messagesContainer);
         
@@ -493,6 +499,33 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
                 color: white;
             }
             
+            }
+            
+            /* Function Menu Styles */
+            .gemini-functions-menu {
+                margin-top: 5px;
+                text-align: right;
+            }
+            
+            .gemini-functions-button {
+                background: none;
+                border: 1px solid #d1d8dd;
+                color: #5f6368;
+                padding: 5px 10px;
+                border-radius: 15px;
+                cursor: pointer;
+                font-size: 12px;
+                transition: background-color 0.2s ease;
+            }
+            
+            .gemini-functions-button:hover {
+                background-color: #f1f3f4;
+            }
+            
+            .gemini-functions-button i {
+                margin-right: 5px;
+            }
+            
             /* Responsive styles */
             @media (max-width: 480px) {
                 .gemini-chat-window {
@@ -552,6 +585,11 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
         // Handle file selection
         this.fileInput.addEventListener("change", () => {
             this.handleFileSelection();
+        });
+
+        // Show function menu
+        this.functionMenuButton.querySelector(".gemini-functions-button").addEventListener("click", () => {
+            this.showFunctionMenu();
         });
     }
     
@@ -730,7 +768,7 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
         const files = this.prepareFileAttachments();
         
         // Send message to server
-        this.sendMessageToServer(message, files);
+        this.sendMessageToServer(message, files, this.contextInfo); // Pass context
         
         // Clear attachments
         this.clearAttachments();
@@ -901,13 +939,12 @@ erpnext_gemini_integration.chat_widget = class ChatWidget {
         });
     }
     
-    sendMessageToServer(message, files) {
+    sendMessageToServer(message, files, context) {
         // Prepare request data
         const data = {
             message: message,
             conversation_id: this.conversationId,
-            context: JSON.stringify(this.contextInfo)
-        };
+            context: JSON.stringify(context || {}) // Use passed context parameter        };
         
         // Add files if available
         if (files && files.length > 0) {
@@ -1196,4 +1233,49 @@ frappe.ready(function() {
         });
     }
 });
+
+
+    showFunctionMenu() {
+        """Fetches and displays available ERPNext functions in a simple dialog."""
+        // Fetch available functions (using the pre-built ones for now)
+        const availableFunctions = [
+            { name: "check_stock_levels", description: "Check stock for an item" },
+            { name: "generate_sales_report", description: "Generate sales report" },
+            { name: "list_overdue_invoices", description: "List overdue invoices" }
+            // In a real implementation, fetch this list dynamically via API
+        ];
+
+        // Create dialog fields
+        let fields = [
+            {
+                fieldname: "info",
+                fieldtype: "HTML",
+                options: `<p>${__("Select an ERPNext action to suggest to Gemini:")}</p>`
+            }
+        ];
+
+        availableFunctions.forEach(func => {
+            fields.push({
+                fieldname: func.name,
+                fieldtype: "Button",
+                label: func.description,
+                click: () => {
+                    // Insert a suggestion into the chat input
+                    this.textInput.value = `Can you ${func.description.toLowerCase()}?`;
+                    this.textInput.focus();
+                    this.adjustTextareaHeight();
+                    this.sendButton.disabled = false;
+                    dialog.hide();
+                }
+            });
+        });
+
+        // Show dialog
+        let dialog = new frappe.ui.Dialog({
+            title: __("ERPNext Actions"),
+            fields: fields
+        });
+
+        dialog.show();
+    }
 
