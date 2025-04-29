@@ -9,7 +9,9 @@ import json
 import time
 import requests
 from frappe import _
-from frappe.utils import cint, get_site_config, get_files_path
+from frappe.utils import cint, get_files_path
+import frappe.utils.caching
+from frappe import get_site_config
 from frappe.utils.file_manager import get_file_path
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -47,16 +49,15 @@ class GeminiWrapper:
         self.user = user or frappe.session.user
         self.settings = self._get_settings()
         self.api_key = self._get_api_key()
-        self.model = self.settings.model or "gemini-2.0-pro"
+        self.model = self.settings.model or "gemini-1.5-pro"
         self.max_tokens = cint(self.settings.max_tokens) or 8192
         self.temperature = float(self.settings.temperature or 0.7)
         self.safety_settings = self._parse_safety_settings()
         self.enable_grounding = self.settings.enable_grounding
         self.enable_function_calling = self.settings.enable_function_calling
         
-        # Initialize the Gemini client
+        # Initialize the Gemini API
         genai.configure(api_key=self.api_key)
-        self.client = genai.Client(api_key=self.api_key)
         
         # Set up rate limiting parameters
         self.request_count = 0
@@ -71,7 +72,7 @@ class GeminiWrapper:
         except frappe.DoesNotExistError:
             frappe.log_error("Gemini Assistant Settings not found. Using defaults.")
             return frappe._dict({
-                "model": "gemini-2.0-pro",
+                "model": "gemini-1.5-pro",
                 "max_tokens": 8192,
                 "temperature": 0.7,
                 "safety_settings": "{}",
@@ -108,25 +109,23 @@ class GeminiWrapper:
         """
         try:
             if not self.settings.safety_settings:
-                return self._get_default_safety_settings()
+                return None
                 
             settings = json.loads(self.settings.safety_settings)
+            
+            # Use a simpler format that's compatible with the current API
             safety_settings = []
-            
             for category, threshold in settings.items():
-                harm_category = getattr(HarmCategory, category, None)
-                harm_threshold = getattr(HarmBlockThreshold, threshold, None)
-                
-                if harm_category and harm_threshold:
-                    safety_settings.append({
-                        "category": harm_category,
-                        "threshold": harm_threshold
-                    })
+                safety_settings.append({
+                    "category": category,
+                    "threshold": threshold
+                })
             
-            return safety_settings
+            return safety_settings if safety_settings else None
+            
         except Exception as e:
             frappe.log_error(f"Error parsing safety settings: {str(e)}")
-            return self._get_default_safety_settings()
+            return None
     
     def _get_default_safety_settings(self):
         """
@@ -135,24 +134,8 @@ class GeminiWrapper:
         Returns:
             list: List of default safety setting dictionaries
         """
-        return [
-            {
-                "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            }
-        ]
+        # Return None to use Gemini API defaults
+        return None
     
     def _check_rate_limits(self):
         """
@@ -184,11 +167,14 @@ class GeminiWrapper:
             files (list, optional): List of file paths or file objects
             
         Returns:
-            list: List of content parts for Gemini API
+            str or list: Content for Gemini API
         """
-        from google.generativeai.types import Content, Part
-        
-        parts = [Part(text=prompt)]
+        # If no files, just return the prompt text
+        if not files:
+            return prompt
+            
+        # If files are provided, prepare multimodal content
+        content_parts = [prompt]
         
         # Process files if provided
         if files:
@@ -207,23 +193,23 @@ class GeminiWrapper:
                     mime_type = self._get_mime_type(file_path)
                     
                     if "image" in mime_type:
-                        with open(file_path, "rb") as f:
-                            image_data = f.read()
-                        parts.append(Part(inline_data={"mime_type": mime_type, "data": image_data}))
+                        # Add image to content
+                        image_data = genai.upload_file(file_path)
+                        content_parts.append(image_data)
                     elif mime_type == "application/pdf":
                         # For PDFs, we'll use a utility function to extract text
                         from erpnext_gemini_integration.utils.file_processor import extract_text_from_pdf
                         pdf_text = extract_text_from_pdf(file_path)
-                        parts.append(Part(text=f"Content from PDF: {pdf_text}"))
+                        content_parts.append(f"Content from PDF: {pdf_text}")
                     elif "text" in mime_type or mime_type == "application/csv":
                         with open(file_path, "r") as f:
                             file_text = f.read()
-                        parts.append(Part(text=f"Content from file: {file_text}"))
+                        content_parts.append(f"Content from file: {file_text}")
                     
                 except Exception as e:
                     frappe.log_error(f"Error processing file for Gemini API: {str(e)}")
         
-        return Content(parts=parts)
+        return content_parts
     
     def _get_mime_type(self, file_path):
         """
@@ -288,14 +274,12 @@ class GeminiWrapper:
         Returns:
             dict: Generation config
         """
-        from google.generativeai.types import GenerationConfig
-        
-        return GenerationConfig(
-            max_output_tokens=max_tokens or self.max_tokens,
-            temperature=temperature or self.temperature,
-            top_p=0.95,
-            top_k=40
-        )
+        return {
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
+            "top_p": 0.95,
+            "top_k": 40
+        }
     
     def _prepare_tools(self, functions=None):
         """
@@ -307,18 +291,14 @@ class GeminiWrapper:
         Returns:
             list: List of tool configurations
         """
-        from google.generativeai.types import Tool
-        
         tools = []
         
         # Add function calling tool if enabled
         function_declarations = self._prepare_function_declarations(functions)
         if function_declarations:
-            tools.append(Tool(function_declarations=function_declarations))
-        
-        # Add grounding with Google Search if enabled
-        if self.enable_grounding:
-            tools.append("google_search_retrieval")
+            tools.append({
+                "function_declarations": function_declarations
+            })
         
         return tools if tools else None
     
@@ -359,7 +339,7 @@ class GeminiWrapper:
                 history = context.get("history")
             
             # Create model instance
-            model = self.client.models.get_model(self.model)
+            model = genai.GenerativeModel(model_name=self.model)
             
             # Generate content
             for attempt in range(self.max_retries):
@@ -881,16 +861,13 @@ class GeminiWrapper:
             context = json.loads(conversation.context) if conversation.context else {}
             
             # Format history for Gemini API
-            from google.generativeai.types import Content, Part
-            
             formatted_history = []
             for msg in history:
                 role = "user" if msg["role"] == "user" else "model"
-                content = Content(
-                    parts=[Part(text=msg["content"])],
-                    role=role
-                )
-                formatted_history.append(content)
+                formatted_history.append({
+                    "role": role,
+                    "parts": [{"text": msg["content"]}]
+                })
             
             # Add history to context
             context["history"] = formatted_history
