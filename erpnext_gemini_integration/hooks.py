@@ -61,7 +61,7 @@ web_include_js = ["/assets/erpnext_gemini_integration/js/chat_widget.js"]
 # ------------
 
 # before_install = "erpnext_gemini_integration.install.before_install"
-# after_install = "erpnext_gemini_integration.install.after_install"
+after_install = "erpnext_gemini_integration.utils.install.after_install"
 
 # Desk Notifications
 # ------------------
@@ -174,3 +174,7 @@ api_endpoints = [
         "method": "erpnext_gemini_integration.api.chat_api.analyze_document"
     },
 ]
+
+# Boot Info
+# ---------
+boot_session = "erpnext_gemini_integration.utils.boot.boot_session"
