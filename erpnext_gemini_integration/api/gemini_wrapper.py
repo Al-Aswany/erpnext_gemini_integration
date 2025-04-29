@@ -8,6 +8,7 @@ import os
 import json
 import time
 import requests
+import random # Added for jitter in retry logic
 from frappe import _
 from frappe.utils import cint, get_site_config, get_files_path
 from frappe.utils.file_manager import get_file_path
@@ -384,8 +385,10 @@ class GeminiWrapper:
                     
                 except Exception as e:
                     if "RESOURCE_EXHAUSTED" in str(e) and attempt < self.max_retries - 1:
-                        # Rate limit hit, wait and retry
-                        time.sleep(self.retry_delay * (attempt + 1))
+                        # Rate limit hit, wait with exponential backoff and retry
+                        wait_time = self.retry_delay * (2 ** attempt) + (random.random() * 0.1) # Add jitter
+                        _logger.warning(f"Gemini API rate limit hit. Retrying in {wait_time:.2f} seconds (Attempt {attempt + 1}/{self.max_retries}).")
+                        time.sleep(wait_time)
                         continue
                     else:
                         raise
@@ -396,13 +399,13 @@ class GeminiWrapper:
             frappe.log_error(f"Gemini API rate limit exceeded: {str(e)}")
             return {
                 "error": True,
-                "message": str(e)
+                "message": _("Gemini API rate limit exceeded. Please try again after a short while.")
             }
         except Exception as e:
             frappe.log_error(f"Error generating content with Gemini API: {str(e)}")
             return {
                 "error": True,
-                "message": f"Error: {str(e)}"
+                "message": _("An unexpected error occurred while communicating with the Gemini API. Please check the logs for details.")
             }
     
     def _process_response(self, response):
@@ -462,7 +465,7 @@ class GeminiWrapper:
             frappe.log_error(f"Error processing Gemini API response: {str(e)}")
             return {
                 "error": True,
-                "message": f"Error processing response: {str(e)}"
+                "message": _("An error occurred while processing the Gemini API response. Please check the logs for details.")
             }
 
 
@@ -487,14 +490,14 @@ class GeminiWrapper:
             if not function_doc:
                 return {
                     "error": True,
-                    "message": f"Function {function_name} not found"
+                    "message": _("Function ") + f"\"{function_name}\"" + _(" not found.")
                 }
             
             # Check if function is enabled
             if not function_doc.enabled:
                 return {
                     "error": True,
-                    "message": f"Function {function_name} is disabled"
+                    "message": _("Function ") + f"\"{function_name}\"" + _(" is currently disabled.")
                 }
             
             # Check if user has permission to execute function
@@ -503,7 +506,7 @@ class GeminiWrapper:
             if not security.check_function_permission(function_name):
                 return {
                     "error": True,
-                    "message": f"Permission denied for function {function_name}"
+                    "message": _("You do not have permission to execute the function ") + f"\"{function_name}\"" + _(".")
                 }
             
             # Check if function requires confirmation
@@ -513,7 +516,7 @@ class GeminiWrapper:
                 frappe.log_error(f"Function {function_name} requires confirmation")
                 return {
                     "error": True,
-                    "message": f"Function {function_name} requires user confirmation"
+                    "message": _("Function ") + f"\"{function_name}\"" + _(" requires user confirmation before execution.")
                 }
             
             # Execute function
