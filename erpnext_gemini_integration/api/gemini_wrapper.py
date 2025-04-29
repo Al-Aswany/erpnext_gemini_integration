@@ -10,10 +10,12 @@ import time
 # import requests # Unused
 import random # Added for jitter in retry logic
 from frappe import _
-from frappe.utils import cint, get_site_config # Removed get_files_path (Unused)
+# Combine imports from both branches, keeping caching and get_files_path
+from frappe.utils import cint, get_files_path, get_site_config
+import frappe.utils.caching 
 from frappe.utils.file_manager import get_file_path
 import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google.generativeai.types import HarmCategory, HarmBlockThreshold # Keep this for potential future use or reference, though parsing changed
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -48,16 +50,17 @@ class GeminiWrapper:
         self.user = user or frappe.session.user
         self.settings = self._get_settings()
         self.api_key = self._get_api_key()
-        self.model = self.settings.model or "gemini-2.0-pro"
+        # Use model from origin/main
+        self.model = self.settings.model or "gemini-1.5-pro" 
         self.max_tokens = cint(self.settings.max_tokens) or 8192
         self.temperature = float(self.settings.temperature or 0.7)
-        self.safety_settings = self._parse_safety_settings()
-        self.enable_grounding = self.settings.enable_grounding
+        # Use safety settings parsing from origin/main
+        self.safety_settings = self._parse_safety_settings() 
+        self.enable_grounding = self.settings.enable_grounding # Keep grounding flag, though tools prep changed
         self.enable_function_calling = self.settings.enable_function_calling
         
-        # Initialize the Gemini client
+        # Initialize the Gemini API
         genai.configure(api_key=self.api_key)
-        self.client = genai.Client(api_key=self.api_key)
         
         # Set up rate limiting parameters
         self.request_count = 0
@@ -71,8 +74,9 @@ class GeminiWrapper:
             return frappe.get_single("Gemini Assistant Settings")
         except frappe.DoesNotExistError:
             frappe.log_error("Gemini Assistant Settings not found. Using defaults.")
+            # Use model from origin/main in defaults
             return frappe._dict({
-                "model": "gemini-2.0-pro",
+                "model": "gemini-1.5-pro", 
                 "max_tokens": 8192,
                 "temperature": 0.7,
                 "safety_settings": "{}",
@@ -100,60 +104,47 @@ class GeminiWrapper:
         
         return api_key
     
+    # Use safety settings parsing from origin/main
     def _parse_safety_settings(self):
         """
         Parse safety settings from JSON string in settings
         
         Returns:
-            list: List of safety setting dictionaries
+            list: List of safety setting dictionaries or None
         """
         try:
             if not self.settings.safety_settings:
                 return self._get_default_safety_settings()
                 
             settings = json.loads(self.settings.safety_settings)
+            
+            # Use a simpler format that's compatible with the current API
             safety_settings = []
-            
             for category, threshold in settings.items():
-                harm_category = getattr(HarmCategory, category, None)
-                harm_threshold = getattr(HarmBlockThreshold, threshold, None)
-                
-                if harm_category and harm_threshold:
+                # Basic validation (can be enhanced)
+                if isinstance(category, str) and isinstance(threshold, str):
                     safety_settings.append({
-                        "category": harm_category,
-                        "threshold": harm_threshold
+                        "category": category.upper().replace("HARM_CATEGORY_", ""), # Attempt to normalize if needed
+                        "threshold": threshold.upper().replace("BLOCK_", "") # Attempt to normalize if needed
                     })
+                else:
+                     _logger.warning(f"Skipping invalid safety setting entry: {category}:{threshold}")
+
+            return safety_settings if safety_settings else self._get_default_safety_settings()
             
-            return safety_settings
         except Exception as e:
             frappe.log_error(f"Error parsing safety settings: {str(e)}")
             return self._get_default_safety_settings()
-    
+
+    # Use default safety settings logic from origin/main
     def _get_default_safety_settings(self):
         """
-        Get default safety settings
+        Get default safety settings (use API defaults by returning None)
         
         Returns:
-            list: List of default safety setting dictionaries
+            None 
         """
-        return [
-            {
-                "category": HarmCategory.HARM_CATEGORY_HARASSMENT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            },
-            {
-                "category": HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                "threshold": HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
-            }
-        ]
+        return None
     
     def _check_rate_limits(self):
         """
@@ -176,6 +167,7 @@ class GeminiWrapper:
         
         self.request_count += 1
     
+    # Use content preparation from origin/main
     def _prepare_content(self, prompt, files=None):
         """
         Prepare content for Gemini API request
@@ -185,11 +177,14 @@ class GeminiWrapper:
             files (list, optional): List of file paths or file objects
             
         Returns:
-            list: List of content parts for Gemini API
+            str or list: Content for Gemini API
         """
-        from google.generativeai.types import Content, Part
-        
-        parts = [Part(text=prompt)]
+        # If no files, just return the prompt text
+        if not files:
+            return prompt
+            
+        # If files are provided, prepare multimodal content
+        content_parts = [prompt]
         
         # Process files if provided
         if files:
@@ -202,29 +197,38 @@ class GeminiWrapper:
                         # Get file path from ERPNext file URL
                         file_path = get_file_path(file_info.get("file_url"))
                     else:
+                        _logger.warning(f"Skipping invalid file info: {file_info}")
                         continue
                     
                     # Determine file type and process accordingly
                     mime_type = self._get_mime_type(file_path)
                     
                     if "image" in mime_type:
-                        with open(file_path, "rb") as f:
-                            image_data = f.read()
-                        parts.append(Part(inline_data={"mime_type": mime_type, "data": image_data}))
+                        # Add image to content using upload_file
+                        _logger.info(f"Uploading image file: {file_path}")
+                        uploaded_file = genai.upload_file(path=file_path)
+                        # Short delay after upload might be needed sometimes
+                        time.sleep(1) 
+                        content_parts.append(uploaded_file)
+                        _logger.info(f"Appended uploaded image: {uploaded_file.name}")
                     elif mime_type == "application/pdf":
-                        # For PDFs, we'll use a utility function to extract text
+                        # For PDFs, extract text (consider using genai.upload_file if API supports it directly)
                         from erpnext_gemini_integration.utils.file_processor import extract_text_from_pdf
                         pdf_text = extract_text_from_pdf(file_path)
-                        parts.append(Part(text=f"Content from PDF: {pdf_text}"))
+                        content_parts.append(f"\n\n--- Content from PDF ({os.path.basename(file_path)}) ---\n{pdf_text}\n--- End PDF Content ---")
                     elif "text" in mime_type or mime_type == "application/csv":
-                        with open(file_path, "r") as f:
+                        # For text/csv, include content directly
+                        with open(file_path, "r", encoding='utf-8', errors='ignore') as f:
                             file_text = f.read()
-                        parts.append(Part(text=f"Content from file: {file_text}"))
-                    
+                        content_parts.append(f"\n\n--- Content from file ({os.path.basename(file_path)}) ---\n{file_text}\n--- End File Content ---")
+                    else:
+                        _logger.warning(f"Skipping unsupported file type {mime_type} for file: {file_path}")
+                        
                 except Exception as e:
-                    frappe.log_error(f"Error processing file for Gemini API: {str(e)}")
+                    # Log error but continue processing other files
+                    frappe.log_error(f"Error processing file {file_info} for Gemini API: {str(e)}")
         
-        return Content(parts=parts)
+        return content_parts
     
     def _get_mime_type(self, file_path):
         """
@@ -237,6 +241,8 @@ class GeminiWrapper:
             str: MIME type of the file
         """
         import mimetypes
+        # Ensure os is imported if using os.path.basename above
+        import os 
         mime_type, _ = mimetypes.guess_type(file_path)
         return mime_type or "application/octet-stream"
     
@@ -278,6 +284,7 @@ class GeminiWrapper:
         
         return declarations if declarations else None
     
+    # Use generation config format from origin/main
     def _prepare_generation_config(self, max_tokens=None, temperature=None):
         """
         Prepare generation config for Gemini API
@@ -289,15 +296,14 @@ class GeminiWrapper:
         Returns:
             dict: Generation config
         """
-        from google.generativeai.types import GenerationConfig
-        
-        return GenerationConfig(
-            max_output_tokens=max_tokens or self.max_tokens,
-            temperature=temperature or self.temperature,
-            top_p=0.95,
-            top_k=40
-        )
+        return {
+            "max_output_tokens": max_tokens or self.max_tokens,
+            "temperature": temperature or self.temperature,
+            "top_p": 0.95,
+            "top_k": 40
+        }
     
+    # Use tools preparation from origin/main (no grounding)
     def _prepare_tools(self, functions=None):
         """
         Prepare tools configuration for Gemini API
@@ -306,20 +312,18 @@ class GeminiWrapper:
             functions (list, optional): List of function names to include
             
         Returns:
-            list: List of tool configurations
+            list: List of tool configurations or None
         """
-        from google.generativeai.types import Tool
-        
         tools = []
         
         # Add function calling tool if enabled
         function_declarations = self._prepare_function_declarations(functions)
         if function_declarations:
-            tools.append(Tool(function_declarations=function_declarations))
+            tools.append({
+                "function_declarations": function_declarations
+            })
         
-        # Add grounding with Google Search if enabled
-        if self.enable_grounding:
-            tools.append("google_search_retrieval")
+        # Grounding retrieval removed as per origin/main merge
         
         return tools if tools else None
     
@@ -329,7 +333,7 @@ class GeminiWrapper:
         
         Args:
             prompt (str): The text prompt
-            context (dict, optional): Context information
+            context (dict, optional): Context information (e.g., history)
             files (list, optional): List of file paths or file objects
             functions (list, optional): List of function names to include
             max_tokens (int, optional): Maximum tokens to generate
@@ -342,7 +346,7 @@ class GeminiWrapper:
             # Check rate limits
             self._check_rate_limits()
             
-            # Prepare content
+            # Prepare content (handles multimodal)
             content = self._prepare_content(prompt, files)
             
             # Prepare generation config
@@ -354,46 +358,69 @@ class GeminiWrapper:
             # Prepare tools
             tools = self._prepare_tools(functions)
             
-            # Add context if provided
+            # Prepare history if provided in context
             history = None
             if context and context.get("history"):
-                history = context.get("history")
+                # Ensure history format is compatible (list of Content objects)
+                # This might need adjustment based on how history is stored/retrieved
+                history = context.get("history") 
+                # Example conversion if history is stored as simple dicts:
+                # history = [genai.types.Content(role=msg['role'], parts=[msg['content']]) for msg in context.get("history")]
             
-            # Create model instance
-            model = self.client.models.get_model(self.model)
+            # Use model instantiation from origin/main
+            model = genai.GenerativeModel(model_name=self.model)
             
             # Generate content
             for attempt in range(self.max_retries):
                 try:
+                    _logger.debug(f"Generating content with Gemini. Attempt {attempt + 1}")
+                    _logger.debug(f"Content: {content}")
+                    _logger.debug(f"History: {history}")
+                    _logger.debug(f"Tools: {tools}")
+                    _logger.debug(f"Safety Settings: {safety_settings}")
+                    _logger.debug(f"Generation Config: {generation_config}")
+
                     if history:
-                        response = model.generate_content(
-                            contents=[*history, content],
+                        # Start chat if history exists
+                        chat = model.start_chat(history=history)
+                        response = chat.send_message(
+                            content=content,
                             generation_config=generation_config,
                             safety_settings=safety_settings,
                             tools=tools
                         )
                     else:
+                        # Use generate_content for single turn
                         response = model.generate_content(
-                            content,
+                            contents=content, # Note: generate_content expects 'contents'
                             generation_config=generation_config,
                             safety_settings=safety_settings,
                             tools=tools
                         )
                     
+                    _logger.debug(f"Received response from Gemini: {response}")
                     # Process response
                     return self._process_response(response)
                     
                 except Exception as e:
+                    _logger.error(f"Error during Gemini API call (Attempt {attempt + 1}): {str(e)}", exc_info=True)
                     if "RESOURCE_EXHAUSTED" in str(e) and attempt < self.max_retries - 1:
                         # Rate limit hit, wait with exponential backoff and retry
                         wait_time = self.retry_delay * (2 ** attempt) + (random.random() * 0.1) # Add jitter
                         _logger.warning(f"Gemini API rate limit hit. Retrying in {wait_time:.2f} seconds (Attempt {attempt + 1}/{self.max_retries}).")
                         time.sleep(wait_time)
                         continue
+                    # Handle potential API changes or other errors
+                    elif "FunctionDeclarations" in str(e) or "Tool" in str(e):
+                         _logger.error("Potential Tool/FunctionDeclaration format issue. Check API documentation.")
+                         # Fallback or specific error handling might be needed here
+                         raise GeminiAPIError(f"API structure error: {str(e)}")
                     else:
+                        # Re-raise other exceptions
                         raise
             
-            raise GeminiAPIError("Maximum retry attempts reached")
+            # If loop completes without success
+            raise GeminiAPIError("Maximum retry attempts reached after API errors.")
             
         except GeminiRateLimitError as e:
             frappe.log_error(f"Gemini API rate limit exceeded: {str(e)}")
@@ -401,13 +428,20 @@ class GeminiWrapper:
                 "error": True,
                 "message": _("Gemini API rate limit exceeded. Please try again after a short while.")
             }
+        except GeminiAPIError as e:
+             frappe.log_error(f"Gemini API Error: {str(e)}")
+             return {
+                "error": True,
+                "message": _("A specific Gemini API error occurred: {0}").format(str(e))
+            }
         except Exception as e:
-            frappe.log_error(f"Error generating content with Gemini API: {str(e)}")
+            frappe.log_error(f"Unexpected error generating content with Gemini API: {str(e)}", exc_info=True)
             return {
                 "error": True,
                 "message": _("An unexpected error occurred while communicating with the Gemini API. Please check the logs for details.")
             }
     
+    # Use response processing from origin/main (function call extraction, no citations)
     def _process_response(self, response):
         """
         Process response from Gemini API
@@ -420,49 +454,72 @@ class GeminiWrapper:
         """
         try:
             # Check if response was blocked
+            # Accessing prompt_feedback might differ based on API version/response structure
             if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
+                _logger.warning(f"Gemini response blocked. Reason: {response.prompt_feedback.block_reason}")
                 return {
                     "error": True,
-                    "message": f"Content blocked: {response.prompt_feedback.block_reason}"
+                    "message": _("Content blocked by safety settings. Reason: {0}").format(response.prompt_feedback.block_reason)
                 }
             
-            # Extract text content
-            text = response.text if hasattr(response, 'text') else None
-            
-            # Check for function calls
+            # Extract text content safely
+            text = None
+            try:
+                text = response.text
+            except ValueError as ve:
+                 _logger.warning(f"Could not extract text directly from response (might contain function call): {ve}")
+                 # Attempt to extract text from parts if direct access fails
+                 if hasattr(response, 'candidates') and response.candidates:
+                     candidate = response.candidates[0]
+                     if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+                         text_parts = [part.text for part in candidate.content.parts if hasattr(part, 'text')]
+                         if text_parts:
+                             text = " ".join(text_parts)
+            except Exception as e:
+                 _logger.error(f"Unexpected error extracting text from response: {e}")
+
+            # Check for function calls using origin/main logic
             function_call = None
-            if hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'content') and candidate.content:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'function_call') and part.function_call:
-                            function_call = {
-                                "name": part.function_call.name,
-                                "args": json.loads(part.function_call.args)
-                            }
-            
-            # Process citations if grounding is enabled
-            citations = []
-            if self.enable_grounding and hasattr(response, 'candidates') and response.candidates:
-                candidate = response.candidates[0]
-                if hasattr(candidate, 'content') and candidate.content:
-                    for part in candidate.content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            # Extract citations from text
-                            pass
+            function_name = None
+            function_args = None
+            try:
+                if hasattr(response, 'candidates') and response.candidates:
+                    candidate = response.candidates[0]
+                    if hasattr(candidate, 'content') and candidate.content and hasattr(candidate.content, 'parts'):
+                        for part in candidate.content.parts:
+                            if hasattr(part, 'function_call') and part.function_call:
+                                fc = part.function_call
+                                function_name = fc.name
+                                # Args might be a Struct/dict-like object, convert to dict
+                                function_args = dict(fc.args) 
+                                function_call = {
+                                    "name": function_name,
+                                    "args": function_args
+                                }
+                                _logger.info(f"Detected function call: {function_name} with args: {function_args}")
+                                break # Assuming only one function call per response part
+            except Exception as e:
+                _logger.error(f"Error extracting function call from response: {e}")
+
+            # Citations processing removed as per origin/main merge
+            citations = [] 
             
             # Return processed response
             result = {
-                "text": text,
+                "text": text or "" , # Ensure text is not None
                 "function_call": function_call,
                 "citations": citations,
                 "error": False
             }
             
+            # If only a function call is returned, text might be empty. Add a placeholder.
+            if function_call and not text:
+                result["text"] = _("Attempting to execute function: {0}").format(function_name)
+
             return result
             
         except Exception as e:
-            frappe.log_error(f"Error processing Gemini API response: {str(e)}")
+            frappe.log_error(f"Error processing Gemini API response: {str(e)}", exc_info=True)
             return {
                 "error": True,
                 "message": _("An error occurred while processing the Gemini API response. Please check the logs for details.")
@@ -474,90 +531,140 @@ class GeminiWrapper:
         Execute a function call
         
         Args:
-            function_call (dict): Function call information
+            function_call (dict): Function call information { "name": str, "args": dict }
             context (dict, optional): Context information
             
         Returns:
-            dict: Result of function execution
+            dict: Result of function execution { "error": bool, "result": any } or { "error": bool, "message": str }
         """
         try:
             # Get function details
             function_name = function_call.get("name")
             function_args = function_call.get("args", {})
             
+            if not function_name:
+                 return {"error": True, "message": _("Function call name missing.")}
+
             # Check if function exists
-            function_doc = frappe.get_doc("Gemini Function", function_name)
-            if not function_doc:
-                return {
+            try:
+                function_doc = frappe.get_doc("Gemini Function", function_name)
+            except frappe.DoesNotExistError:
+                 _logger.error(f"Gemini Function DocType not found: {function_name}")
+                 return {
                     "error": True,
-                    "message": _("Function ") + f"\"{function_name}\"" + _(" not found.")
+                    "message": _("Function definition ") + f"\"{function_name}\"" + _(" not found.")
                 }
             
             # Check if function is enabled
             if not function_doc.enabled:
+                _logger.warning(f"Attempted to call disabled function: {function_name}")
                 return {
                     "error": True,
                     "message": _("Function ") + f"\"{function_name}\"" + _(" is currently disabled.")
                 }
             
             # Check if user has permission to execute function
-            from erpnext_gemini_integration.modules.security import GeminiSecurity
-            security = GeminiSecurity(user=self.user)
-            if not security.check_function_permission(function_name):
-                return {
-                    "error": True,
-                    "message": _("You do not have permission to execute the function ") + f"\"{function_name}\"" + _(".")
-                }
+            # Ensure security module exists and is importable
+            try:
+                from erpnext_gemini_integration.modules.security import GeminiSecurity
+                security = GeminiSecurity(user=self.user)
+                if not security.check_function_permission(function_name):
+                    _logger.warning(f"Permission denied for user {self.user} to execute function {function_name}")
+                    return {
+                        "error": True,
+                        "message": _("You do not have permission to execute the function ") + f"\"{function_name}\"" + _(".")
+                    }
+            except ImportError:
+                 _logger.error("GeminiSecurity module not found. Skipping permission check.")
+                 # Decide if this should be a hard failure or just a warning
+                 # return {"error": True, "message": _("Security module missing, cannot verify function permissions.")}
+
             
             # Check if function requires confirmation
             if function_doc.require_confirmation:
                 # In a real implementation, this would trigger a confirmation flow
-                # For now, we'll just log it
-                frappe.log_error(f"Function {function_name} requires confirmation")
+                # For now, we'll just log it and return an error indicating confirmation needed
+                _logger.info(f"Function {function_name} requires user confirmation.")
                 return {
                     "error": True,
+                    "needs_confirmation": True, # Add a flag for UI handling
                     "message": _("Function ") + f"\"{function_name}\"" + _(" requires user confirmation before execution.")
                 }
             
             # Execute function
+            result = None
             # Check if it's a pre-packaged ERPNext function first
-            from erpnext_gemini_integration.modules.erpnext_functions import ERPNext_FUNCTIONS
-            if function_name in ERPNext_FUNCTIONS:
-                func_to_call = ERPNext_FUNCTIONS[function_name]
-                result = func_to_call(**function_args) # Pass args as keyword arguments
-            elif function_doc.implementation: # Fallback to executing code from doctype
-                _logger.warning(f"Executing function {function_name} from DocType implementation field. This approach is deprecated - consider moving implementation to erpnext_functions.py module for better maintainability and security.")
-                result = self._execute_function_code(function_doc.implementation, function_args, context)
-            else:
-                 return {
-                    "error": True,
-                    "message": _("Function ") + f"\"{function_name}\"" + _(" has no implementation defined.")
-                }
-            # Log function execution
-            from erpnext_gemini_integration.modules.audit import GeminiAuditLog
-            audit = GeminiAuditLog(user=self.user)
-            audit.log_function_call(
-                function_name=function_name,
-                args=function_args,
-                result=result,
-                context=context
-            )
+            try:
+                from erpnext_gemini_integration.modules.erpnext_functions import ERPNext_FUNCTIONS
+                if function_name in ERPNext_FUNCTIONS:
+                    _logger.info(f"Executing pre-packaged function: {function_name}")
+                    func_to_call = ERPNext_FUNCTIONS[function_name]
+                    # Ensure args is a dict before unpacking
+                    result = func_to_call(**(function_args or {})) 
+                elif function_doc.implementation: # Fallback to executing code from doctype (DEPRECATED)
+                    _logger.warning(f"Executing function {function_name} from DocType implementation field. This approach is deprecated - consider moving implementation to erpnext_functions.py module for better maintainability and security.")
+                    result = self._execute_function_code(function_doc.implementation, function_args, context)
+                else:
+                    _logger.error(f"Function {function_name} has no implementation defined.")
+                    return {
+                        "error": True,
+                        "message": _("Function ") + f"\"{function_name}\"" + _(" has no implementation defined.")
+                    }
+            except ImportError:
+                 _logger.error("erpnext_functions module not found. Cannot execute pre-packaged functions.")
+                 if not function_doc.implementation:
+                     return {"error": True, "message": _("Function implementation module missing and no fallback defined.")}
+                 # If fallback exists, log warning and continue
+                 _logger.warning("Falling back to DocType implementation due to missing erpnext_functions module.")
+                 result = self._execute_function_code(function_doc.implementation, function_args, context)
+
+            # Log function execution (ensure audit module exists)
+            try:
+                from erpnext_gemini_integration.modules.audit import GeminiAuditLog
+                audit = GeminiAuditLog(user=self.user)
+                audit.log_function_call(
+                    function_name=function_name,
+                    args=function_args,
+                    result=result,
+                    context=context
+                )
+            except ImportError:
+                 _logger.warning("GeminiAuditLog module not found. Skipping function call audit logging.")
             
+            # Return the result in the format expected by Gemini API for function results
             return {
                 "error": False,
-                "result": result
+                "result": {
+                     "functionResponse": {
+                        "name": function_name,
+                        "response": {
+                            # Gemini expects the result within a 'content' field typically
+                            "content": result 
+                        }
+                    }
+                }
             }
             
         except Exception as e:
-            frappe.log_error(f"Error executing function call: {str(e)}")
+            frappe.log_error(f"Error executing function call {function_name}: {str(e)}", exc_info=True)
+            # Return error in the format expected by Gemini API if possible
             return {
                 "error": True,
-                "message": f"Error executing function: {str(e)}"
+                # "message": f"Error executing function: {str(e)}" # Keep internal message
+                "result": { # Provide error structure for Gemini
+                     "functionResponse": {
+                        "name": function_name,
+                        "response": {
+                            "content": f"Error executing function: {str(e)}" 
+                        }
+                    }
+                }
             }
     
+    # This method executes code directly from a DocType field - keep the enhanced warning
     def _execute_function_code(self, code, args, context):
         """
-        Execute function code
+        Execute function code defined in DocType (DEPRECATED - Use erpnext_functions.py)
         
         Args:
             code (str): Python code to execute
@@ -565,28 +672,83 @@ class GeminiWrapper:
             context (dict): Context information
             
         Returns:
-            dict: Result of function execution
+            any: Result of function execution
         """
         try:
-            # Create a safe execution environment
+            # Create a restricted execution environment if possible
+            # For now, using basic exec with limited globals
             globals_dict = {
                 "frappe": frappe,
                 "_": _,
                 "json": json,
-                "args": args,
-                "context": context or {}
+                "args": args or {},
+                "context": context or {},
+                "result": None # Initialize result
             }
             
             # Execute the code
             exec(code, globals_dict)
             
             # Get the result
-            result = globals_dict.get("result", None)
+            result = globals_dict.get("result")
             
             return result
         except Exception as e:
-            frappe.log_error(f"Error executing function code: {str(e)}")
-            raise    
+            frappe.log_error(f"Error executing function code from DocType field: {str(e)}", exc_info=True)
+            raise # Re-raise the exception to be caught by execute_function_call
+    
+    # process_document and helpers removed as per cleanup plan
+
+    def log_interaction(self, prompt, response, conversation_id=None, context=None):
+        """
+        Log interaction with Gemini API
+        
+        Args:
+            prompt (str): The prompt sent to the API
+            response (dict): The processed response from the API
+            conversation_id (str, optional): Conversation ID
+            context (dict, optional): Context information
+            
+        Returns:
+            str: Message ID of the logged interaction
+        """
+        try:
+            # Ensure conversation exists or create one
+            if not conversation_id:
+                conversation_id = self.create_conversation(context=context)
+                if not conversation_id:
+                    raise Exception("Failed to create conversation for logging")
+            
+            # Log user message
+            user_message = frappe.get_doc({
+                "doctype": "Gemini Message",
+                "conversation": conversation_id,
+                "role": "user",
+                "content": prompt, # Log the original prompt (or masked if needed)
+                "context": json.dumps(context) if context else None
+            })
+            user_message.insert(ignore_permissions=True)
+            
+            # Log assistant message
+            assistant_message = frappe.get_doc({
+                "doctype": "Gemini Message",
+                "conversation": conversation_id,
+                "role": "assistant",
+                "content": response.get("text", ""),
+                "function_call": json.dumps(response.get("function_call")) if response.get("function_call") else None,
+                "citations": json.dumps(response.get("citations")) if response.get("citations") else None,
+                "is_error": 1 if response.get("error") else 0,
+                "error_message": response.get("message") if response.get("error") else None
+            })
+            assistant_message.insert(ignore_permissions=True)
+            
+            # Return the ID of the assistant's message as the primary log entry ID
+            return assistant_message.name
+            
+        except Exception as e:
+            frappe.log_error(f"Error logging Gemini interaction: {str(e)}", exc_info=True)
+            return None
+
     def create_conversation(self, title=None, context=None):
         """
         Create a new conversation
@@ -596,7 +758,7 @@ class GeminiWrapper:
             context (dict, optional): Context information
             
         Returns:
-            str: Conversation ID
+            str: Conversation ID or None if failed
         """
         try:
             # Generate a title if not provided
@@ -611,177 +773,32 @@ class GeminiWrapper:
                 "context": json.dumps(context) if context else None
             })
             
-            conversation.insert()
+            conversation.insert(ignore_permissions=True) # Use ignore_permissions if called from background jobs
             
+            _logger.info(f"Created Gemini Conversation: {conversation.name}")
             return conversation.name
             
         except Exception as e:
-            frappe.log_error(f"Error creating conversation: {str(e)}")
+            frappe.log_error(f"Error creating conversation: {str(e)}", exc_info=True)
             return None
     
-    def add_message(self, conversation_id, role, content, function_call=None):
-        """
-        Add a message to a conversation
-        
-        Args:
-            conversation_id (str): Conversation ID
-            role (str): Message role (user or assistant)
-            content (str): Message content
-            function_call (dict, optional): Function call information
-            
-        Returns:
-            str: Message ID
-        """
-        try:
-            # Create message document
-            message = frappe.get_doc({
-                "doctype": "Gemini Message",
-                "conversation": conversation_id,
-                "role": role,
-                "content": content,
-                "function_call": json.dumps(function_call) if function_call else None
-            })
-            
-            message.insert()
-            
-            return message.name
-            
-        except Exception as e:
-            frappe.log_error(f"Error adding message: {str(e)}")
-            return None
-    
-    def get_conversation_history(self, conversation_id, limit=None):
-        """
-        Get conversation history
-        
-        Args:
-            conversation_id (str): Conversation ID
-            limit (int, optional): Maximum number of messages to retrieve
-            
-        Returns:
-            list: List of messages
-        """
-        try:
-            # Get messages from database
-            filters = {"conversation": conversation_id}
-            fields = ["name", "role", "content", "function_call", "creation"]
-            order_by = "creation asc"
-            
-            if limit:
-                messages = frappe.get_all(
-                    "Gemini Message",
-                    filters=filters,
-                    fields=fields,
-                    order_by=order_by,
-                    limit=limit
-                )
-            else:
-                messages = frappe.get_all(
-                    "Gemini Message",
-                    filters=filters,
-                    fields=fields,
-                    order_by=order_by
-                )
-            
-            # Process messages
-            history = []
-            for msg in messages:
-                message = {
-                    "message_id": msg.name,
-                    "role": msg.role,
-                    "content": msg.content,
-                    "timestamp": msg.creation
-                }
-                
-                if msg.function_call:
-                    message["function_call"] = json.loads(msg.function_call)
-                
-                history.append(message)
-            
-            return history
-            
-        except Exception as e:
-            frappe.log_error(f"Error getting conversation history: {str(e)}")
-            return []
-    
-    def prepare_conversation_context(self, conversation_id, limit=10):
-        """
-        Prepare conversation context for Gemini API
-        
-        Args:
-            conversation_id (str): Conversation ID
-            limit (int, optional): Maximum number of messages to include
-            
-        Returns:
-            dict: Context information
-        """
-        try:
-            # Get conversation history
-            history = self.get_conversation_history(conversation_id, limit)
-            
-            # Get conversation context
-            conversation = frappe.get_doc("Gemini Conversation", conversation_id)
-            context = json.loads(conversation.context) if conversation.context else {}
-            
-            # Format history for Gemini API
-            from google.generativeai.types import Content, Part
-            
-            formatted_history = []
-            for msg in history:
-                role = "user" if msg["role"] == "user" else "model"
-                content = Content(
-                    parts=[Part(text=msg["content"])],
-                    role=role
-                )
-                formatted_history.append(content)
-            
-            # Add history to context
-            context["history"] = formatted_history
-            
-            return context
-            
-        except Exception as e:
-            frappe.log_error(f"Error preparing conversation context: {str(e)}")
-            return {}
-    
-    def log_interaction(self, prompt, response, conversation_id=None, context=None):
-        """
-        Log an interaction with Gemini API
-        
-        Args:
-            prompt (str): The prompt sent to Gemini
-            response (dict): The response from Gemini
-            conversation_id (str, optional): The conversation ID
-            context (dict, optional): Context information
-            
-        Returns:
-            str: Message ID
-        """
-        try:
-            # Create or get conversation
-            if not conversation_id:
-                conversation_id = self.create_conversation(context=context)
-            
-            if not conversation_id:
-                return None
-            
-            # Add user message
-            user_message_id = self.add_message(conversation_id, "user", prompt)
-            
-            # Add assistant message
-            assistant_message_id = None
-            if response and not response.get("error"):
-                function_call = response.get("function_call")
-                assistant_message_id = self.add_message(
-                    conversation_id, 
-                    "assistant", 
-                    response.get("text", ""), 
-                    function_call
-                )
-            
-            # Return the assistant message ID
-            return assistant_message_id
-            
-        except Exception as e:
-            frappe.log_error(f"Error logging interaction: {str(e)}")
-            return None
+    # Removed add_message, get_conversation_history, prepare_conversation_context as they seem redundant
+    # The logging function now handles message creation within a conversation.
+    # History preparation should happen in the calling function (e.g., chat_api.py) before calling generate_content.
+
+# Utility function (can be moved to utils if needed)
+@frappe.whitelist()
+@frappe.utils.caching.regional_cache("erpnext_gemini_integration:get_enabled_functions")
+def get_enabled_functions_for_client():
+    """Get a list of enabled functions suitable for client-side display."""
+    try:
+        functions = frappe.get_all(
+            "Gemini Function",
+            filters={"enabled": 1},
+            fields=["name", "description", "client_prompt_suggestion"]
+        )
+        return functions
+    except Exception as e:
+        frappe.log_error(f"Error fetching enabled Gemini functions: {str(e)}")
+        return []
+
