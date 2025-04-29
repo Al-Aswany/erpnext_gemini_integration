@@ -1,20 +1,28 @@
+from __future__ import unicode_literals
+import frappe
+import os
+from frappe import _
+
 app_name = "erpnext_gemini_integration"
-app_title = "Erpnext Gemini Integration"
+app_title = "ERPNext Gemini Integration"
 app_publisher = "Golive-Solutions"
-app_description = "App for Erpnext Gemini Integration"
+app_description = "App for ERPNext Gemini Integration"
 app_email = "info@golive-solutions.com"
 app_license = "MIT"
+
+
+
 
 # Includes in <head>
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/erpnext_gemini_integration/css/erpnext_gemini_integration.css"
-# app_include_js = "/assets/erpnext_gemini_integration/js/erpnext_gemini_integration.js"
+app_include_css = ["/assets/erpnext_gemini_integration/css/chat_widget.css"]
+app_include_js = ["/assets/erpnext_gemini_integration/js/chat_widget.js"]
 
 # include js, css files in header of web template
-# web_include_css = "/assets/erpnext_gemini_integration/css/erpnext_gemini_integration.css"
-# web_include_js = "/assets/erpnext_gemini_integration/js/erpnext_gemini_integration.js"
+web_include_css = ["/assets/erpnext_gemini_integration/css/chat_widget.css"]
+web_include_js = ["/assets/erpnext_gemini_integration/js/chat_widget.js"]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "erpnext_gemini_integration/public/scss/website"
@@ -40,7 +48,7 @@ app_license = "MIT"
 
 # website user home page (by Role)
 # role_home_page = {
-# 	"Role": "home_page"
+#	"Role": "home_page"
 # }
 
 # Generators
@@ -49,42 +57,11 @@ app_license = "MIT"
 # automatically create page for each record of this doctype
 # website_generators = ["Web Page"]
 
-# Jinja
-# ----------
-
-# add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "erpnext_gemini_integration.utils.jinja_methods",
-# 	"filters": "erpnext_gemini_integration.utils.jinja_filters"
-# }
-
 # Installation
 # ------------
 
 # before_install = "erpnext_gemini_integration.install.before_install"
 # after_install = "erpnext_gemini_integration.install.after_install"
-
-# Uninstallation
-# ------------
-
-# before_uninstall = "erpnext_gemini_integration.uninstall.before_uninstall"
-# after_uninstall = "erpnext_gemini_integration.uninstall.after_uninstall"
-
-# Integration Setup
-# ------------------
-# To set up dependencies/integrations with other apps
-# Name of the app being installed is passed as an argument
-
-# before_app_install = "erpnext_gemini_integration.utils.before_app_install"
-# after_app_install = "erpnext_gemini_integration.utils.after_app_install"
-
-# Integration Cleanup
-# -------------------
-# To clean up dependencies/integrations with other apps
-# Name of the app being uninstalled is passed as an argument
-
-# before_app_uninstall = "erpnext_gemini_integration.utils.before_app_uninstall"
-# after_app_uninstall = "erpnext_gemini_integration.utils.after_app_uninstall"
 
 # Desk Notifications
 # ------------------
@@ -116,34 +93,24 @@ app_license = "MIT"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
-
+doc_events = {
+    "*": {
+        "on_submit": "erpnext_gemini_integration.modules.workflow.on_document_submit",
+        
+    }
+}
+#"before_save": "erpnext_gemini_integration.modules.workflow.before_document_save",
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"erpnext_gemini_integration.tasks.all"
-# 	],
-# 	"daily": [
-# 		"erpnext_gemini_integration.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"erpnext_gemini_integration.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"erpnext_gemini_integration.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"erpnext_gemini_integration.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "daily": [
+        "erpnext_gemini_integration.modules.workflow.run_daily_analysis",
+    ],
+    "hourly": [
+        "erpnext_gemini_integration.modules.workflow.run_hourly_analysis",
+    ],
+}
 
 # Testing
 # -------
@@ -168,44 +135,24 @@ app_license = "MIT"
 #
 # auto_cancel_exempted_doctypes = ["Auto Repeat"]
 
-# Ignore links to specified DocTypes when deleting documents
-# -----------------------------------------------------------
-
-# ignore_links_on_delete = ["Communication", "ToDo"]
-
-# Request Events
-# ----------------
-# before_request = ["erpnext_gemini_integration.utils.before_request"]
-# after_request = ["erpnext_gemini_integration.utils.after_request"]
-
-# Job Events
-# ----------
-# before_job = ["erpnext_gemini_integration.utils.before_job"]
-# after_job = ["erpnext_gemini_integration.utils.after_job"]
 
 # User Data Protection
 # --------------------
 
-# user_data_fields = [
-# 	{
-# 		"doctype": "{doctype_1}",
-# 		"filter_by": "{filter_by}",
-# 		"redact_fields": ["{field_1}", "{field_2}"],
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_2}",
-# 		"filter_by": "{filter_by}",
-# 		"partial": 1,
-# 	},
-# 	{
-# 		"doctype": "{doctype_3}",
-# 		"strict": False,
-# 	},
-# 	{
-# 		"doctype": "{doctype_4}"
-# 	}
-# ]
+user_data_fields = [
+    {
+        "doctype": "{doctype}",
+        "filter_by": "{filter_by}",
+        "redact_fields": ["{field1}", "{field2}"],
+        "partial": 1,
+    },
+    {
+        "doctype": "Gemini Conversation",
+        "filter_by": "user",
+        "redact_fields": ["content"],
+        "partial": 1,
+    },
+]
 
 # Authentication and authorization
 # --------------------------------
@@ -213,3 +160,17 @@ app_license = "MIT"
 # auth_hooks = [
 # 	"erpnext_gemini_integration.auth.validate"
 # ]
+
+# API Endpoints
+# ------------
+
+api_endpoints = [
+    {
+        "path": "/gemini/chat",
+        "method": "erpnext_gemini_integration.api.chat_api.process_message"
+    },
+    {
+        "path": "/gemini/analyze",
+        "method": "erpnext_gemini_integration.api.chat_api.analyze_document"
+    },
+]

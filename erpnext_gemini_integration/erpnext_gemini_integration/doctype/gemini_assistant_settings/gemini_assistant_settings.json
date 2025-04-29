@@ -1,0 +1,132 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-17 00:55:32.148277",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "api_key_section",
+  "api_key",
+  "model",
+  "model_settings_section",
+  "max_tokens",
+  "temperature",
+  "safety_settings",
+  "features_section",
+  "enable_grounding",
+  "enable_function_calling",
+  "enable_file_analysis",
+  "permissions_section",
+  "default_role"
+ ],
+ "fields": [
+  {
+   "fieldname": "api_key_section",
+   "fieldtype": "Section Break",
+   "label": "API Configuration"
+  },
+  {
+   "description": "Your Google Gemini API key",
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "in_list_view": 1,
+   "label": "Gemini API Key",
+   "reqd": 1
+  },
+  {
+   "default": "gemini-2.0-pro",
+   "fieldname": "model",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Gemini Model",
+   "options": "gemini-2.0-pro\ngemini-2.0-vision-pro\ngemini-1.5-pro\ngemini-1.5-flash",
+   "reqd": 1
+  },
+  {
+   "fieldname": "model_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Model Settings"
+  },
+  {
+   "default": "8192",
+   "description": "Maximum number of tokens to generate",
+   "fieldname": "max_tokens",
+   "fieldtype": "Int",
+   "label": "Max Tokens"
+  },
+  {
+   "default": "0.7",
+   "description": "Controls randomness (0.0-1.0)",
+   "fieldname": "temperature",
+   "fieldtype": "Float",
+   "label": "Temperature"
+  },
+  {
+   "default": "{}",
+   "description": "JSON configuration for safety settings",
+   "fieldname": "safety_settings",
+   "fieldtype": "Code",
+   "label": "Safety Settings"
+  },
+  {
+   "fieldname": "features_section",
+   "fieldtype": "Section Break",
+   "label": "Features"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_grounding",
+   "fieldtype": "Check",
+   "label": "Enable Grounding with Google Search"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_function_calling",
+   "fieldtype": "Check",
+   "label": "Enable Function Calling"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_file_analysis",
+   "fieldtype": "Check",
+   "label": "Enable File Analysis"
+  },
+  {
+   "fieldname": "permissions_section",
+   "fieldtype": "Section Break",
+   "label": "Permissions"
+  },
+  {
+   "description": "Role required to access Gemini Assistant",
+   "fieldname": "default_role",
+   "fieldtype": "Link",
+   "label": "Default Access Role",
+   "options": "Role"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-04-17 00:55:32.148277",
+ "modified_by": "Administrator",
+ "module": "ERPNext Gemini Integration",
+ "name": "Gemini Assistant Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

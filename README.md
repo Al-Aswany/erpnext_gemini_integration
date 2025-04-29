@@ -1,6 +1,6 @@
-## Erpnext Gemini Integration
+## ERPNext Gemini Integration
 
-App for Erpnext Gemini Integration
+App for ERPNext Gemini Integration
 
 #### License
 

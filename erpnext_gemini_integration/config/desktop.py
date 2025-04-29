@@ -3,8 +3,8 @@ from frappe import _
 def get_data():
 	return [
 		{
-			"module_name": "Erpnext Gemini Integration",
+			"module_name": "ERPNext Gemini Integration",
 			"type": "module",
-			"label": _("Erpnext Gemini Integration")
+			"label": _("ERPNext Gemini Integration")
 		}
 	]

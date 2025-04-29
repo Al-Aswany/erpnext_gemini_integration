@@ -3,7 +3,7 @@ name = "erpnext_gemini_integration"
 authors = [
     { name = "Golive-Solutions", email = "info@golive-solutions.com"}
 ]
-description = "App for Erpnext Gemini Integration"
+description = "App for ERPNext Gemini Integration"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
