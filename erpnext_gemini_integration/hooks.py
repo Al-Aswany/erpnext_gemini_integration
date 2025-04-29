@@ -25,7 +25,7 @@ web_include_js = ["/assets/erpnext_gemini_integration/js/chat_widget.js"]
 # Installation
 # ------------
 # Keep after_install hook from origin/main
-after_install = "erpnext_gemini_integration.utils.install.after_install"
+# after_install = "erpnext_gemini_integration.utils.install.after_install"
 
 # Document Events
 # ---------------
