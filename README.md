@@ -56,13 +56,42 @@ This app provides a framework for leveraging Gemini's capabilities, including na
     *   "What are the key points in this text file?"
     *   "Based on the attached image, describe the product."
 *   **Function Calling (Requires Defined Functions):**
-    *   "What is the stock level for item 'XYZ-123'?"
-    *   "Create a draft lead for 'ABC Corp' with contact 'John Doe'."
+    *   "What is the stock level for item \'XYZ-123\'?"
+    *   "Create a draft lead for \'ABC Corp\' with contact \'John Doe\'."
     *   "Show me my overdue tasks."
 
-## Defining Custom Functions
+## Pre-Built Functions
 
-1.  Navigate to `Awesome Bar > Gemini Function > New`.
+This integration comes with several pre-built functions to interact with common ERPNext modules:
+
+*   **`check_stock_levels(item_code)`:**
+    *   **Description:** Fetches the current actual stock quantity for a specific item code across all warehouses.
+    *   **Example Chat:** "What is the stock status for item WIDGET-001?"
+    *   **Gemini Action:** Calls `check_stock_levels` with `item_code="WIDGET-001"`.
+    *   **Response:** "Stock level for item \"WIDGET-001\" is 85."
+
+*   **`generate_sales_report(start_date_str, end_date_str)`:**
+    *   **Description:** Generates a summary sales report (total orders, total amount) based on submitted Sales Orders within a date range. Defaults to the last 30 days.
+    *   **Example Chat:** "Generate a sales report for last week."
+    *   **Gemini Action:** Calls `generate_sales_report` (calculating dates for last week).
+    *   **Response:** "Found 15 submitted Sales Orders totaling $12,345.67 between 2025-04-22 and 2025-04-28."
+
+*   **`list_overdue_invoices(customer)`:**
+    *   **Description:** Lists submitted Sales Invoices that are past their due date and not fully paid. Can optionally filter by customer.
+    *   **Example Chat:** "Are there any overdue invoices for 'Customer X'?"
+    *   **Gemini Action:** Calls `list_overdue_invoices` with `customer="Customer X"`.
+    *   **Response:** "Found 3 overdue invoices for customer \"Customer X\" totaling $5,678.90 outstanding."
+
+## Contextual Assistance
+
+The Gemini Assistant attempts to understand the context of the ERPNext page you are currently viewing (e.g., a specific Sales Order, Item, or Customer list).
+
+*   **Automatic Context:** When you open the chat widget while viewing a specific document (like Sales Order "SO-123"), the assistant is aware of this context.
+*   **Relevant Suggestions:** Based on the context, the assistant might proactively suggest relevant actions or prioritize functions related to the current document.
+    *   *Example (Viewing Sales Order SO-123):* The assistant might understand prompts like "Check production status for this order" or "Summarize this sales order."
+*   **How it Works:** The chat widget detects the current `doctype` and `docname` from the URL and passes this information along with your message to the backend.
+
+## Defining Custom FunctionsNavigate to `Awesome Bar > Gemini Function > New`.
 2.  **Name:** A unique identifier for the function (e.g., `get_stock_level`).
 3.  **Description:** A clear explanation of what the function does, used by Gemini to understand when to call it.
 4.  **Parameters (JSON Schema):** Define the input parameters the function expects in [JSON Schema format](https://json-schema.org/).

@@ -1,0 +1,30 @@
+[
+    {
+        "doctype": "Gemini Function",
+        "name": "check_stock_levels",
+        "description": "Fetches the current actual stock quantity for a specific item code across all warehouses.",
+        "parameters": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"item_code\": {\n      \"type\": \"string\",\n      \"description\": \"The unique code of the item (e.g., ITM-001) to check the stock level for.\"\n    }\n  },\n  \"required\": [\"item_code\"]\n}",
+        "enabled": 1,
+        "module": "ERPNext Gemini Integration",
+        "implementation": "# Implementation moved to erpnext_gemini_integration.modules.erpnext_functions.py"
+    },
+    {
+        "doctype": "Gemini Function",
+        "name": "generate_sales_report",
+        "description": "Generates a summary sales report based on submitted Sales Orders within a specified date range. Defaults to the last 30 days if no dates are provided.",
+        "parameters": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"start_date_str\": {\n      \"type\": \"string\",\n      \"description\": \"The start date for the report in YYYY-MM-DD format. Optional.\"\n    },\n    \"end_date_str\": {\n      \"type\": \"string\",\n      \"description\": \"The end date for the report in YYYY-MM-DD format. Optional.\"\n    }\n  }\n}",
+        "enabled": 1,
+        "module": "ERPNext Gemini Integration",
+        "implementation": "# Implementation moved to erpnext_gemini_integration.modules.erpnext_functions.py"
+    },
+    {
+        "doctype": "Gemini Function",
+        "name": "list_overdue_invoices",
+        "description": "Lists submitted Sales Invoices that are past their due date and not fully paid or cancelled. Can optionally filter by a specific customer.",
+        "parameters": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"customer\": {\n      \"type\": \"string\",\n      \"description\": \"The name or ID of the customer to filter overdue invoices for. Optional.\"\n    }\n  }\n}",
+        "enabled": 1,
+        "module": "ERPNext Gemini Integration",
+        "implementation": "# Implementation moved to erpnext_gemini_integration.modules.erpnext_functions.py"
+    }
+]
+
