@@ -13,6 +13,7 @@ app_license = "MIT"
 # Includes in <head>
 # ------------------
 
+
 # include js, css files in header of desk.html
 app_include_css = "/assets/erpnext_gemini_integration/css/chat_widget.css"
 app_include_js = "/assets/erpnext_gemini_integration/js/chat_widget.js"
