@@ -1,1 +1,4 @@
 erpnext_gemini_integration
+
+ERPNext Gemini Integration
+Gemini

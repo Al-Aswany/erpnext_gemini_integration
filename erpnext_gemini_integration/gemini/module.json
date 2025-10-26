@@ -1,0 +1,16 @@
+{
+ "custom": false,
+ "name": "Gemini",
+ "owner": "Administrator",
+ "module_name": "Gemini",
+ "app_name": "erpnext_gemini_integration",
+ "type": "module",
+ "hidden": 0,
+ "module_list": [
+  {
+   "type": "page",
+   "name": "gemini-sql-dashboard",
+   "label": "Gemini SQL Dashboard"
+  }
+ ]
+} 
