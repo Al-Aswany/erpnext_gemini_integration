@@ -62,15 +62,15 @@ class GeminiClient:
         try:
             # Mask sensitive data in prompt
             masked_prompt = mask_sensitive_data(prompt)
-            print(f"masked_prompt: {masked_prompt}")
             
             # Use default model if not specified
             model_name = model or self.default_model
-            print(f"model_name: {model_name}")
+            
+            # Log request details securely (without API key)
+            frappe.logger().debug(f"Gemini API request - Model: {model_name}, Prompt length: {len(masked_prompt)}")
             
             # Prepare API URL
             api_url = f"{self.api_base_url}/{model_name}:generateContent?key={self.api_key}"
-            print(f"API URL prepared")
             
             # Prepare request payload
             payload = {
@@ -105,7 +105,9 @@ class GeminiClient:
             
             # Parse response
             result = response.json()
-            print(f"response: {result}")
+            
+            # Log response details securely (without sensitive content)
+            frappe.logger().debug(f"Gemini API response received - Status: {response.status_code}")
             
             if 'error' in result:
                 raise GeminiAPIError(result['error'].get('message', 'Unknown error'))

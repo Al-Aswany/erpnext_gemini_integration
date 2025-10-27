@@ -441,17 +441,34 @@ class FileProcessor:
             # Decode content
             text = content.decode('utf-8', errors='ignore')
             
-            # Parse JSON
-            data = json.loads(text)
+            # Check content size to prevent memory exhaustion
+            if len(text) > 10 * 1024 * 1024:  # 10MB limit
+                frappe.log_error("JSON file too large for processing")
+                return "Error: JSON file exceeds size limit"
             
-            # Format as pretty JSON
-            formatted_text = json.dumps(data, indent=2)
+            # Parse JSON with proper error handling
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError as json_error:
+                frappe.log_error(f"Invalid JSON format: {str(json_error)}")
+                return f"Error: Invalid JSON format - {str(json_error)}"
+            except ValueError as value_error:
+                frappe.log_error(f"JSON value error: {str(value_error)}")
+                return f"Error: JSON processing error - {str(value_error)}"
             
-            return formatted_text
+            # Format as pretty JSON with size limit
+            try:
+                formatted_text = json.dumps(data, indent=2)
+                if len(formatted_text) > 5 * 1024 * 1024:  # 5MB limit for output
+                    return json.dumps(data, separators=(',', ':'))[:1024*1024] + "\n... (truncated due to size)"
+                return formatted_text
+            except (TypeError, ValueError) as format_error:
+                frappe.log_error(f"JSON formatting error: {str(format_error)}")
+                return f"Error: Could not format JSON - {str(format_error)}"
             
         except Exception as e:
             frappe.log_error(f"Error extracting text from JSON: {str(e)}")
-            return ""
+            return f"Error: Failed to process JSON file - {str(e)}"
     
     def _extract_text_from_office(self, content, file_type):
         """

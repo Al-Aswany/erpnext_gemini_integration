@@ -122,7 +122,7 @@ web_include_js = "/assets/erpnext_gemini_integration/js/chat_widget.js"
 # 	],
 # 	"weekly": [
 # 		"erpnext_gemini_integration.tasks.weekly"
-# 	]
+# 	],
 # 	"monthly": [
 # 		"erpnext_gemini_integration.tasks.monthly"
 # 	]
